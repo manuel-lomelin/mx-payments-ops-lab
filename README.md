@@ -1,3 +1,4 @@
 # mx-payments-ops-lab
 
-SPEI bill-pay reliability and B2B collections demo for Mexico. Synthetic data only.
+Work in progress. Demo of SPEI bill-pay reliability and B2B collections tooling for Mexico,
+built on synthetic data.
