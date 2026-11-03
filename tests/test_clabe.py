@@ -25,8 +25,22 @@ def test_known_valid_clabe():
     assert result.messages == []
 
 
+# Worked example from https://es.wikipedia.org/wiki/CLABE
+WIKIPEDIA_EXAMPLE = "032180000118359719"
+
+
 def test_check_digit_formula():
     assert compute_check_digit(BANXICO_EXAMPLE[:17]) == 1
+    assert compute_check_digit(WIKIPEDIA_EXAMPLE[:17]) == 9
+
+
+def test_wikipedia_example_structure():
+    result = validate_clabe(WIKIPEDIA_EXAMPLE)
+    assert result.plaza_code == "180"
+    assert result.account_number == "00011835971"
+    assert result.check_digit == 9
+    # Bank code 032 is not in the Wikipedia catalog itself, so it is flagged as unknown.
+    assert result.errors == (ClabeError.UNKNOWN_BANK,)
 
 
 def test_check_digit_zero_case():
@@ -114,7 +128,23 @@ def test_every_single_digit_error_is_detected():
             assert ClabeError.CHECK_DIGIT in validate_clabe(mutated).errors
 
 
-def test_bank_catalog_codes_are_three_digits():
+def test_bank_catalog_matches_wikipedia_table():
     banks = load_banks()
-    assert len(banks) >= 10
+    assert len(banks) == 99
     assert all(len(code) == 3 and code.isdigit() for code in banks)
+    assert "999" not in banks  # the N/A placeholder row is excluded
+    spot_checks = {
+        "002": "BANAMEX",
+        "012": "BBVA MÉXICO",
+        "030": "BAJÍO",
+        "137": "BANCOPPEL",
+        "167": "HEY BANCO",
+        "646": "STP",
+        "722": "MERCADO PAGO W",
+        "902": "INDEVAL",
+    }
+    assert {code: banks[code] for code in spot_checks} == spot_checks
+
+
+def test_catalog_is_read_as_utf8():
+    assert load_banks()["605"] == "VALUÉ"
