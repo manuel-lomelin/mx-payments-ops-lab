@@ -15,7 +15,7 @@ A hands-on lab for two problems every LatAm spend-management fintech eventually 
 ![Data](https://img.shields.io/badge/data-100%25%20synthetic-8250df)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-[**What it does**](#-what-the-lab-does) · [**Why it matters**](#-who-it-helps-and-how) · [**Why it's built this way**](#-why-its-built-this-way) · [**Run it**](#-run-it-in-two-commands) · [**Product docs**](#-product-thinking-not-just-code)
+[**What's new**](#-whats-new) · [**What it does**](#-what-the-lab-does) · [**Why it matters**](#-who-it-helps-and-how) · [**Why it's built this way**](#-why-its-built-this-way) · [**Run it**](#-run-it-in-two-commands) · [**Product docs**](#-product-thinking-not-just-code)
 
 <img src="docs/img/billpay-dashboard.png" alt="BillPay dashboard" width="90%">
 
@@ -23,12 +23,28 @@ A hands-on lab for two problems every LatAm spend-management fintech eventually 
 
 ---
 
+## 🆕 What's new
+
+| | Change | What it means |
+|---|---|---|
+| 🪙 | **Filter 2: penny drop + ownership lookup** ([#22](https://github.com/manuel-lomelin/mx-payments-ops-lab/pull/22)) | Every new supplier account gets a MXN 0.01 SPEI transfer before its first real payment. A return blocks it; a settled cent's CEP must show the invoice RFC. A Cobre-style lookup cross-checks the owner without moving money. On the sample file: **12 bad accounts stopped before any real money moved**, sent-payment success **94.6% → 99.0%**, for **MXN 1.03** |
+| 🏦 | **99-institution bank catalog** ([#21](https://github.com/manuel-lomelin/mx-payments-ops-lab/pull/21)) | Filter 1 now knows every code in the Spanish Wikipedia [CLABE table](https://es.wikipedia.org/wiki/CLABE) (banks, development banks, brokerages, STP, Nvio, Mercado Pago), up from 22 |
+| 🔌 | **Live Cobre client** | Set `COBRE_USER_ID` / `COBRE_SECRET` to run the ownership lookup against [Cobre's Account Verification API](https://docs.cobre.com/account-verification-1886570m0.md) instead of the simulator |
+| 📐 | **[ADR 0005](docs/decisions/0005-two-filter-account-validation.md)** | Why the penny drop is the primary check and the lookup is the cross-check |
+| 🧪 | **207 tests**, 99% coverage on `core/` | Every filter-2 decision path, the cache, response windows, and the Cobre client against a fake server |
+
+Next up: a real penny drop through the provider with CEP retrieval ([#23](https://github.com/manuel-lomelin/mx-payments-ops-lab/issues/23)) and a bank catalog sourced from Banxico ([#24](https://github.com/manuel-lomelin/mx-payments-ops-lab/issues/24)).
+
+---
+
 ## 🧭 The problem in one minute
 
 **Paying suppliers.** A finance analyst uploads a file with 120 supplier payments. One CLABE
 has a typo, two rows are duplicates, a receiving bank times out at 10:02, and the statement
-prints references differently from what was sent. None of that is hard. All of it is manual,
-and the worst outcome isn't a failed payment, it's **paying the same supplier twice**.
+prints references differently from what was sent. None of that is hard. All of it is manual.
+And a perfectly valid CLABE can still be dead, or belong to someone else: the classic "we
+changed banks, pay this new account" email. The worst outcomes aren't failed payments,
+they're **paying the same supplier twice, or paying the wrong account once**.
 
 **Collecting from customers.** A lender has 400 SME credit lines. Some customers are a few
 days late and will pay with a friendly WhatsApp; others are sliding toward 90+ days. Agents
@@ -273,7 +289,7 @@ make setup && make run
 Then open http://localhost:8501. Requires Python 3.11+.
 
 **Suggested 3-minute tour**
-1. **Bulk Payment Run**: review the pre-flight report, then hit *Send*. Push *P(returned)* up and send again.
+1. **Bulk Payment Run**: review the filter-1 report, then hit *Verify and send*. See which accounts filter 2 stopped and why (compare `beneficiary_rfc` with `cep_rfc`). Send again: verified accounts are reused, no new pennies.
 2. **BillPay Dashboard**: drag the bank-statement noise sliders and watch reconciliation react.
 3. **Collections Analytics**: read the roll-rate matrix, then open any *SQL* expander.
 4. **Collections Workbench**: pick an account, see why it's risky, then add *"irá a la cárcel"* to the draft. It gets blocked.
@@ -360,7 +376,10 @@ tests/                 Unit tests for core/ + smoke tests for every page
 I built this with Claude Code as a pair programmer. I set the product scope, constraints and
 acceptance criteria. The assistant prototyped each module on its own feature branch, and I
 reviewed every diff. I challenged the domain calls (which returns are retryable, what counts
-as a cure, what the guardrails must block) and asked for changes. Tests and CI are the
+as a cure, what the guardrails must block) and asked for changes. One example: the first
+draft of account verification wrapped Cobre's ownership lookup and called it a penny
+validation. It isn't one, because no money moves. I redirected it to a real MXN 0.01 penny
+drop with a CEP owner check as the primary proof, with the lookup as a cross-check. Tests and CI are the
 contract: nothing merges without ruff, pytest and the coverage gate passing. Two real bugs
 were caught that way and are documented in the PR history.
 
