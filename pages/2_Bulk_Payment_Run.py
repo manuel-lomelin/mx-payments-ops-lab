@@ -45,7 +45,7 @@ view = report[report["status"] != "ready"] if only_issues else report
 st.dataframe(
     view[
         ["row", "status", "beneficiary", "clabe", "bank_name", "amount_mxn", "reference", "issues"]
-    ],  # fmt: skip
+    ],
     hide_index=True,
     width="stretch",
 )
@@ -86,11 +86,21 @@ if run is not None:
 
     st.markdown("**Needs-human queue**")
     st.dataframe(
-        run.human_queue[["payment_id", "beneficiary", "amount_mxn", "bank_name",
-                         "last_reason_label", "attempts", "retries_exhausted", "next_action"]],
+        run.human_queue[
+            [
+                "payment_id",
+                "beneficiary",
+                "amount_mxn",
+                "bank_name",
+                "last_reason_label",
+                "attempts",
+                "retries_exhausted",
+                "next_action",
+            ]
+        ],
         hide_index=True,
         width="stretch",
-    )  # fmt: skip
+    )
     with st.expander("All payments"):
         st.dataframe(pays, hide_index=True, width="stretch")
     with st.expander("Attempt log"):
