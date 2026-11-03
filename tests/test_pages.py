@@ -18,9 +18,14 @@ def test_page_renders(page):
 def test_bulk_run_send_button():
     at = AppTest.from_file(str(ROOT / "pages" / "2_Bulk_Payment_Run.py"), default_timeout=60)
     at.run()
-    at.button[0].click().run()
+    at.button(key="send").click().run()
     assert not at.exception
-    assert "billpay_run" in at.session_state
+    demo = at.session_state["billpay_demo"]
+    assert (demo.verification["decision"] == "verified").sum() > 0
+    # Second run reuses verified accounts instead of sending new pennies.
+    at.button(key="send").click().run()
+    again = at.session_state["billpay_demo"].verification
+    assert (again["check"] == "reused").sum() == (demo.verification["decision"] == "verified").sum()
 
 
 def test_workbench_blocks_a_threatening_edit():
