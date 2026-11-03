@@ -10,7 +10,7 @@ setup:
 	$(BIN)/pip install -e ".[dev,llm]"
 
 run:
-	$(BIN)/streamlit run streamlit_app.py
+	$(BIN)/streamlit run Home.py
 
 test:
 	$(BIN)/pytest
