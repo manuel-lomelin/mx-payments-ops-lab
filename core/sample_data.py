@@ -81,4 +81,53 @@ def generate_payment_batch(n: int = 120, seed: int = 42, error_rate: float = 0.0
             row["clabe"] = row["clabe"][:10] + "ABCD" + row["clabe"][14:]
         elif kind == "duplicate" and idx > 0:
             rows[idx] = dict(rows[idx - 1])
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    # RFC derived from the supplier number with its own RNG, so the columns above are
+    # unchanged by adding it.
+    df["beneficiary_rfc"] = df["beneficiary"].map(supplier_rfc)
+    return df
+
+
+def synthetic_rfc(rng: random.Random, prefix: str = "PDE") -> str:
+    """Persona-moral-shaped RFC: 3 letters + YYMMDD + 3-character homoclave. Fake."""
+    alnum = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789"
+    date = f"{rng.randint(5, 20):02d}{rng.randint(1, 12):02d}{rng.randint(1, 28):02d}"
+    return prefix + date + "".join(rng.choice(alnum) for _ in range(3))
+
+
+def supplier_rfc(beneficiary: str) -> str:
+    return synthetic_rfc(random.Random(f"rfc|{beneficiary}"))
+
+
+def generate_bank_registry(
+    payments: pd.DataFrame,
+    seed: int = 7,
+    p_nonexistent: float = 0.03,
+    p_blocked: float = 0.015,
+    p_cancelled: float = 0.015,
+    p_wrong_owner: float = 0.03,
+) -> pd.DataFrame:
+    """What the receiving banks know about each CLABE in a payment file (synthetic).
+
+    Most accounts belong to the supplier on the invoice. A few do not exist, are blocked
+    or cancelled, or belong to a different RFC (the "we changed banks" fraud pattern).
+    """
+    rng = random.Random(seed)
+    rows = []
+    pairs = payments[["clabe", "beneficiary", "beneficiary_rfc"]].drop_duplicates("clabe")
+    for r in pairs.sort_values("clabe").itertuples():
+        u = rng.random()
+        if u < p_nonexistent:
+            continue
+        status, owner_name, owner_rfc = "active", r.beneficiary.upper(), r.beneficiary_rfc
+        if u < p_nonexistent + p_blocked:
+            status = "blocked"
+        elif u < p_nonexistent + p_blocked + p_cancelled:
+            status = "cancelled"
+        elif u < p_nonexistent + p_blocked + p_cancelled + p_wrong_owner:
+            owner_name = "TERCERO DEMO SA DE CV"
+            owner_rfc = synthetic_rfc(random.Random(f"owner|{r.clabe}"), prefix="TDE")
+        rows.append(
+            {"clabe": r.clabe, "owner_name": owner_name, "owner_rfc": owner_rfc, "status": status}
+        )
+    return pd.DataFrame(rows, columns=["clabe", "owner_name", "owner_rfc", "status"])

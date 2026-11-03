@@ -1,6 +1,7 @@
 """Write seeded synthetic data to /data. Re-running produces identical output.
 
 - data/sample_payments.csv: supplier payment file for the BillPay module (committed)
+- data/sample_bank_registry.csv: what receiving banks "know" about each CLABE (committed)
 - data/lab.duckdb: collections portfolio tables for ad-hoc SQL (git-ignored)
 """
 
@@ -9,15 +10,19 @@ from pathlib import Path
 import duckdb
 
 from core.portfolio import generate_portfolio
-from core.sample_data import generate_payment_batch
+from core.sample_data import generate_bank_registry, generate_payment_batch
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 
 
 def main() -> None:
     path = DATA / "sample_payments.csv"
-    generate_payment_batch().to_csv(path, index=False)
+    payments = generate_payment_batch()
+    payments.to_csv(path, index=False)
     print(f"wrote {path}")
+    registry_path = DATA / "sample_bank_registry.csv"
+    generate_bank_registry(payments).to_csv(registry_path, index=False)
+    print(f"wrote {registry_path}")
 
     db_path = DATA / "lab.duckdb"
     db_path.unlink(missing_ok=True)
