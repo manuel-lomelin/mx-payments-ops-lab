@@ -1,0 +1,72 @@
+# SPEI simulator configuration.
+#
+# IMPORTANT: the return reasons below are ILLUSTRATIVE internal labels written for this demo.
+# They are NOT Banxico's official return-reason codes or wording, and no official numeric
+# codes are used on purpose. Verify against Banxico's official SPEI catalog before using any
+# of this outside a demo.
+
+outcome_probabilities:
+  settled: 0.90
+  returned: 0.06
+  pending: 0.04
+
+# Latency in seconds, sampled from a lognormal with the given median and sigma.
+latency_seconds:
+  settled: { median: 4, sigma: 0.6 }
+  returned: { median: 45, sigma: 0.8 }
+  pending: { median: 2400, sigma: 0.7 }   # time until a pending transfer finally resolves
+
+# A pending transfer eventually resolves to one of these.
+pending_resolution:
+  settled: 0.80
+  returned_reason: TIMEOUT                # returned with this reason in the other 20%
+
+return_reasons:
+  - id: NONEXISTENT_ACCOUNT
+    label: Cuenta inexistente
+    weight: 0.30
+    retryable: false
+    next_action: >-
+      Confirm the CLABE with the supplier using a recent bank statement cover page before
+      re-sending. Update the supplier master record.
+  - id: BLOCKED_ACCOUNT
+    label: Cuenta bloqueada
+    weight: 0.12
+    retryable: false
+    next_action: >-
+      Contact the supplier: the account is blocked at the receiving bank. Ask for an
+      alternate account and hold the invoice.
+  - id: CANCELLED_ACCOUNT
+    label: Cuenta cancelada
+    weight: 0.10
+    retryable: false
+    next_action: >-
+      Request a new CLABE from the supplier and re-run supplier onboarding checks.
+  - id: ACCOUNT_TYPE_MISMATCH
+    label: Tipo de cuenta no corresponde
+    weight: 0.10
+    retryable: false
+    next_action: >-
+      Check whether the destination was entered as the wrong account type (e.g. card vs
+      CLABE). Correct the instruction and re-send as a new payment.
+  - id: NAME_MISMATCH
+    label: Nombre del beneficiario no coincide
+    weight: 0.10
+    retryable: false
+    next_action: >-
+      Verify beneficiary legal name and RFC against the CFDI; fix the supplier record and
+      re-send.
+  - id: RECEIVER_UNAVAILABLE
+    label: Participante receptor no disponible
+    weight: 0.18
+    retryable: true
+    next_action: >-
+      Automatic retries exhausted. Check receiving bank status and schedule a manual
+      re-send.
+  - id: TIMEOUT
+    label: Tiempo de respuesta excedido
+    weight: 0.10
+    retryable: true
+    next_action: >-
+      Automatic retries exhausted. Confirm with the bank that no funds left the account
+      before any manual re-send.
