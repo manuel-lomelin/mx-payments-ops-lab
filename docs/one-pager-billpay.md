@@ -19,6 +19,9 @@ risk of paying twice.
    account problems never do and should go straight to a human with a suggested next step.
 3. Exact reference + amount matching handles most of reconciliation; a small fuzzy layer
    handles reformatted references, and what remains is the real exception list.
+4. Proving a new supplier account with a MXN 0.01 penny drop (and an ownership lookup)
+   before its first payment removes most account-problem returns and stops payments to a
+   CLABE that is not the supplier's, for one cent per account.
 
 ## Metrics
 - **North star:** share of payments settled with zero human touch (pre-flight → settled →
@@ -26,7 +29,8 @@ risk of paying twice.
 - **Supporting:** payment success rate, first-attempt success, median and p90 settlement
   time, return rate by reason, reconciliation error rate, time to resolve failed transfers.
 - **Guardrails:** duplicate payments (target 0), payments re-sent while pending (target 0),
-  share of blocked rows that were actually valid (false-positive pre-flight blocks).
+  share of blocked rows that were actually valid (false-positive pre-flight blocks),
+  payments to an unverified account (target 0), first payments delayed by verification.
 
 ## First 30 / 60 / 90 days
 - **30:** instrument the funnel (uploaded → blocked → sent → settled → reconciled). Baseline
@@ -34,8 +38,8 @@ risk of paying twice.
 - **60:** ship pre-flight + retry policy to a pilot cohort; measure first-attempt success and
   the needs-human queue size vs. baseline; tune which reasons are retryable from real data.
 - **90:** auto-reconciliation live; target a drop in month-end close time and in manual
-  matches; decide whether supplier-account verification (pre-validating CLABE ownership)
-  is the next bet based on the share of NONEXISTENT/NAME_MISMATCH returns.
+  matches. Turn on account verification (penny drop + ownership lookup) for new suppliers
+  and compare account-problem returns and wrong-account incidents against the baseline.
 
 ## Risks
 - **SAT / CFDI:** supplier payments should tie back to CFDI invoices; payments on PPD
