@@ -215,8 +215,24 @@ def test_llm_failures_fall_back(client, note):
 
 
 def test_llm_available_with_key(monkeypatch):
+    pytest.importorskip("anthropic")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-a-real-key")
     assert nudges.llm_available()
+
+
+def test_llm_unavailable_without_sdk(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_anthropic(name, *args, **kwargs):
+        if name == "anthropic":
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-a-real-key")
+    monkeypatch.setattr(builtins, "__import__", no_anthropic)
+    assert not nudges.llm_available()
 
 
 def test_seed_contact_log_only_active_accounts():
