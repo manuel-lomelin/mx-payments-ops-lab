@@ -1,0 +1,48 @@
+# Filter 2: verify a supplier's account before its first real payment.
+# Runs only on rows that passed pre-flight (filter 1: CLABE structure, check digit, bank).
+#
+#   2a. Penny drop: send MXN 0.01 over SPEI. A return blocks the account; a settled cent
+#       comes with a CEP (Banxico's proof of payment) carrying the beneficiary RFC as the
+#       receiving bank has it, which must match the RFC on the supplier's invoice.
+#   2b. Ownership lookup (cross-check, no money moved): ask the provider whether the CLABE
+#       belongs to that RFC. Modelled on Cobre's Account Verification API
+#       (model mex_acc_ownership_1).
+#
+# A verified (CLABE, RFC) pair is reused, so each supplier account is checked once.
+
+penny_drop:
+  amount_mxn: 0.01
+  concept: Validacion de cuenta
+
+ownership_lookup:
+  enabled: true
+  provider_model: mex_acc_ownership_1
+  holder_id_type: rfc
+  # Values below mirror Cobre's public docs and drive the SIMULATED lookup only.
+  response_window:                       # results are only delivered inside these windows
+    business_day: { start: "07:00", end: "18:30" }
+    non_business_day: { start: "07:00", end: "16:00" }
+  latency_seconds: { median: 600, sigma: 0.68 }   # ~10 min median, ~24 min p90
+  p_unresolved: 0.03
+  retry_after_hours: 12                  # do not re-submit an unresolved check sooner
+
+# Internal policy: trust a verified pair for this long before checking it again.
+reuse_verified_days: 180
+
+next_actions:
+  penny_returned: >-
+    The MXN 0.01 test transfer was returned, so the account cannot receive SPEI. Do not
+    pay. Ask the supplier for a current CLABE (bank statement cover page).
+  penny_retries_exhausted: >-
+    The test transfer kept failing for infrastructure reasons. Hold and retry the
+    verification later.
+  wrong_owner: >-
+    The account that received the test transfer belongs to a different RFC. Do not pay.
+    Call the supplier on a number already on file: changed-account requests are a common
+    fraud pattern.
+  signals_disagree: >-
+    The test transfer matched the RFC but the ownership lookup did not. Hold and review
+    the CEP manually before paying.
+  invalid_rfc: >-
+    Beneficiary RFC is missing or malformed, so ownership cannot be checked. Fix the RFC
+    from the supplier's CFDI.

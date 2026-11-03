@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal, InvalidOperation
 
 import pandas as pd
@@ -11,6 +12,11 @@ from core.clabe import validate_clabe
 from core.config import load_config
 
 REQUIRED_COLUMNS = ["beneficiary", "clabe", "amount_mxn", "reference", "concept"]
+# Needed by filter 2 (account verification); files without it can still be pre-flighted.
+OPTIONAL_COLUMNS = ["beneficiary_rfc"]
+
+# Persona moral: 3 letters, persona física: 4; then YYMMDD and a 3-character homoclave.
+RFC_PATTERN = re.compile(r"^[A-ZÑ&]{3,4}\d{6}[A-Z\d]{3}$")
 
 ERROR = "error"
 WARNING = "warning"
@@ -24,6 +30,8 @@ class PaymentInstruction(BaseModel):
     amount_mxn: Decimal = Field(gt=0, decimal_places=2)
     reference: str
     concept: str
+    beneficiary_rfc: str = ""
+    account_verified: bool = False
 
 
 class PreflightError(ValueError):
@@ -37,8 +45,9 @@ def read_payments_csv(source) -> pd.DataFrame:
     missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
     if missing:
         raise PreflightError(f"Missing required columns: {', '.join(missing)}")
-    df = df[REQUIRED_COLUMNS].copy()
-    for col in REQUIRED_COLUMNS:
+    columns = REQUIRED_COLUMNS + [c for c in OPTIONAL_COLUMNS if c in df.columns]
+    df = df[columns].copy()
+    for col in columns:
         df[col] = df[col].astype(str).str.strip()
     return df
 
@@ -98,6 +107,10 @@ def preflight(df: pd.DataFrame, limits: dict | None = None) -> pd.DataFrame:
             issues[i].append((ERROR, "Beneficiary is empty."))
         elif len(row["beneficiary"]) > limits["beneficiary_max_len"]:
             issues[i].append((WARNING, "Beneficiary name will be truncated."))
+        if "beneficiary_rfc" in out.columns and not RFC_PATTERN.match(
+            str(row["beneficiary_rfc"]).strip().upper()
+        ):
+            issues[i].append((WARNING, "RFC missing or malformed: account cannot be verified."))
         if not row["concept"]:
             issues[i].append((WARNING, "Concept is empty."))
         elif len(row["concept"]) > limits["concept_max_len"]:
@@ -139,9 +152,19 @@ def preflight_summary(report: pd.DataFrame) -> dict:
     }
 
 
-def to_instructions(report: pd.DataFrame) -> list[PaymentInstruction]:
-    """Convert sendable pre-flight rows into validated instruction models."""
+def to_instructions(
+    report: pd.DataFrame, verification: pd.DataFrame | None = None
+) -> list[PaymentInstruction]:
+    """Convert sendable pre-flight rows into validated instruction models.
+
+    With a filter-2 `verification` frame, only verified payments are returned.
+    """
     sendable = report[report["status"] != "blocked"]
+    verified: set[str] = set()
+    if verification is not None:
+        verified = set(verification.loc[verification["decision"] == "verified", "payment_id"])
+        sendable = sendable[sendable["payment_id"].isin(verified)]
+    rfcs = sendable.get("beneficiary_rfc")
     return [
         PaymentInstruction(
             payment_id=r.payment_id,
@@ -151,6 +174,8 @@ def to_instructions(report: pd.DataFrame) -> list[PaymentInstruction]:
             amount_mxn=Decimal(str(r.amount)).quantize(Decimal("0.01")),
             reference=r.reference,
             concept=r.concept,
+            beneficiary_rfc="" if rfcs is None else str(rfcs[r.Index]),
+            account_verified=r.payment_id in verified,
         )
         for r in sendable.itertuples()
     ]

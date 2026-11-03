@@ -46,9 +46,12 @@ This lab turns both workflows into something you can click through, measure, and
 
 ```mermaid
 flowchart LR
-    A[📄 Payment CSV] --> B{Pre-flight}
+    A[📄 Payment CSV] --> B{Filter 1<br/>CLABE + pre-flight}
     B -- blocked --> X[❌ Fix before sending<br/>bad CLABE · duplicate · bad amount]
-    B -- ready --> C[🏦 SPEI simulator]
+    B -- new supplier account --> V{Filter 2<br/>MXN 0.01 penny drop<br/>+ ownership lookup}
+    B -- already verified --> C
+    V -- returned or wrong owner --> Y[🛑 Blocked: never paid<br/>ask supplier for a new CLABE]
+    V -- verified --> C[🏦 SPEI simulator]
     C -- settled --> R[🔁 Reconciliation]
     C -- returned, retryable --> D[⏳ Backoff & retry]
     D --> C
@@ -61,12 +64,20 @@ flowchart LR
 
 | Step | What you see | Why it matters |
 |---|---|---|
-| **CLABE validator** | 18 digits split into bank / plaza / account / check digit, verified with Banxico's 3-7-1 weights | The cheapest failure to prevent is the one caught before sending |
-| **Pre-flight report** | Every row marked *ready*, *warning* or *blocked*, with the reason | The analyst fixes 9 rows instead of chasing 9 returns |
+| **Filter 1 · CLABE validator** | 18 digits split into bank / plaza / account / check digit, verified with the 3-7-1 weights against a 99-institution catalog (from the [CLABE article](https://es.wikipedia.org/wiki/CLABE)) | The cheapest failure to prevent is the one caught before sending |
+| **Filter 1 · Pre-flight report** | Every row marked *ready*, *warning* or *blocked*, with the reason | The analyst fixes 9 rows instead of chasing 9 returns |
+| **Filter 2 · Penny drop** | New supplier accounts get MXN 0.01 over SPEI first. A return blocks the account; a settled cent's CEP must show the invoice RFC | A dead account fails on one cent, not on a $250,000 invoice, and **a CLABE that isn't the supplier's never gets paid** |
+| **Filter 2 · Ownership lookup** | A no-money cross-check that the CLABE belongs to that RFC, modelled on [Cobre's Account Verification API](https://docs.cobre.com/account-verification-1886570m0.md) (simulated by default, live client included) | A second, independent owner check; disagreement holds the payment for review |
 | **SPEI simulator** | Settled / returned (devolución) / pending, realistic latency, tunable odds | Lets you stress-test ops flows without a bank |
 | **Retry policy** | Infra failures retried with backoff; account failures routed to a human with a suggested fix | Fewer manual re-sends, **zero double payments by design** |
 | **Reconciliation** | Exact match → fuzzy match → unmatched *both ways* (sent-not-posted and posted-not-sent) | Month-end close becomes an exception list, not a spreadsheet hunt |
 | **Dashboard** | Success rate, median/p90 settlement, returns by reason, recon error rate, time to resolve | Ops gets the same numbers the CFO asks for |
+
+<div align="center">
+<img src="docs/img/account-verification.png" alt="Filter 2 results" width="85%">
+<br><sub>Filter 2 on the sample file: 8 accounts returned the penny and 4 belonged to a different RFC
+(compare <code>beneficiary_rfc</code> with <code>cep_rfc</code>). None of them got a real payment.</sub>
+</div>
 
 ### Module 2 · Collections Workbench
 
@@ -104,7 +115,7 @@ flowchart LR
 | Persona | Pain today | What the lab gives them |
 |---|---|---|
 | 🧾 **Finance ops analyst** | Chasing returns and re-sending by hand | Pre-flight before sending, auto-retry for infra failures, a short queue with the next step written out |
-| 🏦 **Treasury / AP lead** | Fear of double payments, slow month-end close | A retry policy that never re-sends pending transfers, reconciliation that surfaces only real exceptions |
+| 🏦 **Treasury / AP lead** | Fear of double payments, "we changed banks" fraud, slow month-end close | Accounts proven with a penny before the first payment, a retry policy that never re-sends pending transfers, reconciliation that surfaces only real exceptions |
 | 📞 **Collections agent** | Same script for everyone, unsure what's allowed | A prioritized worklist, the reason each account is risky, a compliant draft ready to send |
 | 📋 **Collections manager** | Strategy lives in someone's head | Roll rates and cures to steer by, treatment rules in one YAML file |
 | 📊 **CFO** | Can't see where cash gets stuck | Success, settlement time, recovery and vintage curves, with the SQL behind every number |
@@ -115,13 +126,26 @@ flowchart LR
 > These numbers come from synthetic data with fixed seeds. They show that the mechanics work,
 > not how any real bank or portfolio performs.
 
-| BillPay run (120-row file) | | Collections portfolio (400 SMEs) | |
-|---|---|---|---|
-| Rows blocked at pre-flight | **9** | Accounts with DPD > 0 | **23%** |
-| Payments settled | **94.6%** | 1-30 DPD that cure next month | **80%** |
-| Median / p90 settlement | **3.7 s / 8.8 s** | Recovery on 90+ exposure | **33%** |
-| Reconciliation error rate | **5.2%** | Next-month roll rate, low → high risk band | **15% → 36% → 83%** |
-| Median time to resolve a return | **4.1 h** (simulated) | Promises to pay kept | **79%** |
+**BillPay run, 120-row supplier file.** Filter 1 blocks 9 rows (4 short CLABEs, 3 duplicates,
+1 wrong check digit, 1 non-positive amount). Then, with and without filter 2:
+
+| | Filter 1 only | Filter 1 + filter 2 |
+|---|---|---|
+| Payments sent | 111 | **99** (12 accounts stopped before any real money moved) |
+| Stopped by a returned penny / wrong owner | – | **8 / 4** |
+| Sent payments that settled | 94.6% | **99.0%** |
+| Payments needing a human after sending | 6 | **1** |
+| Reconciliation error rate | 5.2% | **4.6%** |
+| Cost of verification | – | **MXN 1.03** in pennies, 99 lookups (median ~10 min) |
+| Second run of the same file | – | **0** new pennies: all 99 verified accounts reused |
+
+Median settlement is 3.7 s either way (p90 8.8 s without filter 2, 9.1 s with it).
+
+**Collections portfolio, 400 SMEs**
+
+| Accounts with DPD > 0 | 1-30 DPD that cure next month | Recovery on 90+ exposure | Next-month roll rate, low → high risk band | Promises to pay kept |
+|---|---|---|---|---|
+| **23%** | **80%** | **33%** | **15% → 36% → 83%** | **79%** |
 
 ---
 
@@ -183,6 +207,25 @@ seeded demo and can be reproduced with the default seeds.
 
 </td>
 </tr>
+<tr>
+<td valign="top">
+
+**🪙 Prove the account before paying it**<br>
+A valid CLABE can still be dead or someone else's. New supplier accounts get a MXN 0.01
+penny drop (does it settle? does the CEP show the invoice RFC?) plus an ownership lookup.
+Verified pairs are reused, so each account costs one cent once.
+→ [ADR 0005](docs/decisions/0005-two-filter-account-validation.md)
+
+</td>
+<td valign="top">
+
+**🧾 Cheap checks first, paid checks second**<br>
+Filter 1 is offline and free, so it runs on every row and keeps bad rows from ever
+costing a penny or a lookup. Filter 2 only runs on rows that pass it, and only once per
+new (CLABE, RFC) pair.
+
+</td>
+</tr>
 </table>
 
 ### Architecture
@@ -200,7 +243,7 @@ flowchart LR
 
     subgraph Core["🧠 core/ · pure Python, 99% tested"]
         direction TB
-        CL[clabe] --> PF[payments] --> SIM[spei_sim] --> RT[retry]
+        CL[clabe] --> PF[payments] --> AV[account_verification] --> SIM[spei_sim] --> RT[retry]
         SIM --> RC[recon]
         PG[portfolio] --> EW[early_warning] --> TR[treatment] --> NU[nudges] --> CP[compliance]
         PG --> PTP[ptp]
@@ -209,6 +252,7 @@ flowchart LR
     CFG[[⚙️ config/*.yaml]] -.-> Core
     SQL[(🦆 DuckDB · sql/*.sql)]
     LLM{{🤖 Claude API · optional}} -.-> NU
+    COB{{🏦 Cobre lookup · optional}} -.-> AV
 
     UI --> Core
     Core --> SQL
@@ -246,6 +290,11 @@ Then open http://localhost:8501. Requires Python 3.11+.
 
 Try the SQL directly: `duckdb data/lab.duckdb < sql/roll_rates.sql`
 
+**Optional live Cobre lookup:** set `COBRE_USER_ID` and `COBRE_SECRET` (and `COBRE_BASE_URL`
+for a sandbox) to use Cobre's Account Verification API as the ownership lookup instead of the
+simulator. The client follows Cobre's public docs; it has not been run against the live API
+from this repo. The penny drop itself always runs on the SPEI simulator.
+
 **Optional Claude drafting:** copy `.env.example` to `.env` (or export the variables) and set
 `ANTHROPIC_API_KEY`. Drafts then use `claude-opus-5-5` (override with `ANTHROPIC_MODEL`) with
 the API's server-side refusal fallback enabled. Without a key, deterministic Spanish
@@ -263,7 +312,7 @@ templates are used, and LLM drafts go through the same compliance checks.
 | [One-pager · Collections](docs/one-pager-collections.md) | Same structure for the collections workbench |
 | [Experiment design](docs/experiments.md) | A/B test for the nudge: unit, primary metric, MDE with the sample-size math, stop rules |
 | [Compliance notes](docs/compliance-notes.md) | The reasoning behind each guardrail and what pattern checks can't catch |
-| [Decisions (ADRs)](docs/decisions/) | DuckDB · retry policy · rules + LLM · synthetic data |
+| [Decisions (ADRs)](docs/decisions/) | DuckDB · retry policy · rules + LLM · synthetic data · two-filter account validation |
 | [Roadmap](docs/roadmap.md) | The backlog, also tracked as GitHub Issues |
 
 <details>
@@ -293,11 +342,11 @@ templates are used, and LLM drafts go through the same compliance checks.
 
 ```
 Home.py, pages/        Streamlit UI (5 pages)
-core/                  Domain logic: clabe, payments, spei_sim, retry, recon, portfolio,
-                       early_warning, treatment, nudges, compliance, ptp
+core/                  Domain logic: clabe, payments, account_verification, spei_sim, retry,
+                       recon, portfolio, early_warning, treatment, nudges, compliance, ptp
 sql/                   Every metric as a plain DuckDB query
 config/                Business rules in YAML
-data/                  Public bank catalog + seeded sample payment file
+data/                  Bank catalog (from Wikipedia) + seeded sample payment file and bank registry
 docs/                  One-pagers, ADRs, experiment design, compliance notes, roadmap
 tests/                 Unit tests for core/ + smoke tests for every page
 ```
@@ -321,6 +370,12 @@ were caught that way and are documented in the PR history.
   "Demo Finanzas"); the only real names are public bank names in `data/banks.csv`, a subset
   to verify against Banxico.
 - **SPEI return reasons are illustrative labels**, not Banxico's official catalog or codes.
+- **The bank catalog comes from Wikipedia's CLABE article** and lags real changes: it has no
+  entry for some current participants, and its own worked example uses a retired code (032).
+  Verify against Banxico's participant list before production use.
+- **Filter 2 is simulated**: the penny drop runs on the SPEI simulator against a synthetic
+  bank registry, and the CEP is synthetic. The Cobre lookup client is untested against the
+  live API.
 - Settlement latency, human resolution time and the bank statement are simulated. The
   portfolio has no interest or fees, and balances freeze at 90+ DPD.
 - **Compliance rules are a high-level reading of CONDUSEF's collection rules**, implemented

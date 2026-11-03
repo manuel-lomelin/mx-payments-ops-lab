@@ -1,22 +1,20 @@
-from pathlib import Path
-
 import plotly.express as px
 import streamlit as st
 
+from core.billpay_demo import sample_run
 from core.billpay_metrics import compute_metrics
-from core.payments import preflight, read_payments_csv, to_instructions
 from core.recon import StatementNoise, generate_bank_statement, reconcile
-from core.spei_sim import run_batch
-
-SAMPLE = Path(__file__).resolve().parent.parent / "data" / "sample_payments.csv"
 
 st.set_page_config(page_title="BillPay dashboard", page_icon="📊", layout="wide")
 st.title("BillPay dashboard")
 
 run = st.session_state.get("billpay_run")
 if run is None:
-    st.caption("No run in this session yet: showing the seeded sample file with default settings.")
-    run = run_batch(to_instructions(preflight(read_payments_csv(SAMPLE))))
+    st.caption(
+        "No run in this session yet: showing the seeded sample file with default settings "
+        "and account verification on."
+    )
+    run = sample_run().batch
 else:
     st.caption("Showing the run from the Bulk payment run page.")
 

@@ -5,7 +5,8 @@ These become GitHub Issues when the repo is published (`scripts/create_issues.sh
 | Title | Labels |
 |---|---|
 | Replace illustrative SPEI return reasons with Banxico's official catalog | billpay, compliance |
-| Supplier account verification before first payment (CLABE ownership) | billpay, enhancement |
+| Real penny drop through the payment provider (payout + CEP retrieval by tracking key) | billpay, enhancement |
+| Source the bank catalog from Banxico's participant list instead of Wikipedia | billpay, compliance |
 | Carry CFDI UUID through payments and reconciliation | billpay, enhancement |
 | Persist runs in a transactional store (Postgres) instead of session state | infra |
 | Maker-checker approval for bulk files above a threshold | billpay, enhancement |
