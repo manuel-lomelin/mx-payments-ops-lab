@@ -1,47 +1,196 @@
-# mx-payments-ops-lab
+<div align="center">
 
-**A working demo of two Mexican fintech problems, built by a Product Lead who codes:
-SPEI bill-pay reliability and B2B collections.** Upload a supplier payment file and watch it
-get pre-validated (CLABE check digit, duplicates, field limits), sent through a SPEI
-simulator with returns and a retry policy that never double-pays, and reconciled against a
-mock bank statement. Then switch to a seeded SME credit portfolio: roll rates, cures,
-recoveries and vintages in plain SQL, an explainable early-warning score, rules-based
-treatment, and a Spanish collection-message drafter where every draft (template or LLM) must
-pass compliance guardrails before it can be sent.
+# 💸 mx-payments-ops-lab
 
-> Synthetic data only. Numbers below come from the seeded demo and say nothing about any real
-> bank, lender or portfolio.
+### What happens *after* a Mexican SME hits "pay" or "collect", and how to make it boring.
 
-**Live demo:** not deployed yet (tracked in the roadmap). Run it locally in two commands below.
+A hands-on lab for two problems every LatAm spend-management fintech eventually owns:<br>
+**getting supplier payments over SPEI to land**, and **collecting from B2B customers without crossing the line**.
 
-| BillPay dashboard | Compliance guardrails catching a threat |
-|---|---|
-| ![BillPay dashboard](docs/img/billpay-dashboard.png) | ![Compliance check](docs/img/compliance-check.png) |
-| **Collections analytics** | **Collections workbench** |
-| ![Collections analytics](docs/img/collections-analytics.png) | ![Collections workbench](docs/img/collections-workbench.png) |
+[![CI](https://github.com/manuel-lomelin/mx-payments-ops-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/manuel-lomelin/mx-payments-ops-lab/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
+![DuckDB](https://img.shields.io/badge/analytics-DuckDB-FFF000?logo=duckdb&logoColor=black)
+![Coverage](https://img.shields.io/badge/core%20coverage-99%25-2ea44f)
+![Data](https://img.shields.io/badge/data-100%25%20synthetic-8250df)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
-## What's inside
+[**What it does**](#-what-the-lab-does) · [**Why it matters**](#-who-it-helps-and-how) · [**Why it's built this way**](#-why-its-built-this-way) · [**Run it**](#-run-it-in-two-commands) · [**Product docs**](#-product-thinking-not-just-code)
 
-| Module | What it does | Code |
-|---|---|---|
-| CLABE validator | 18-digit structure, 3-7-1 check digit, bank catalog lookup | `core/clabe.py` |
-| Bulk payment run | CSV upload, pre-flight report (CLABE, amount, duplicates, reference length) | `core/payments.py` |
-| SPEI simulator | Settled / returned / pending with lognormal latency; illustrative return reasons | `core/spei_sim.py`, `config/spei_returns.yaml` |
-| Retry policy | Retryable vs. not, exponential backoff, never re-send pending, needs-human queue | `core/retry.py`, `config/retry_policy.yaml` |
-| Reconciliation | Reversal pairs → exact (reference + amount) → fuzzy; unmatched both ways | `core/recon.py` |
-| BillPay dashboard | Success rate, median/p90 settlement, returns by reason, recon error, time to resolve | `sql/billpay_*.sql` |
-| Portfolio generator | 400 SME accounts, 12 monthly statements, payments, promises; seeded | `core/portfolio.py` |
-| Delinquency analytics | DPD buckets, roll-rate matrix, cure, recovery, days to resolution, vintages | `sql/*.sql` |
-| Early-warning score | Points table with per-feature contributions and a T-1 → T backtest | `core/early_warning.py` |
-| Treatment engine | Reminder → nudge → call → payment plan → agency, by bucket/segment/risk | `config/treatment.yaml` |
-| Nudge drafter + guardrails | Spanish template or Claude draft; 6 compliance checks; blocked drafts logged | `core/nudges.py`, `core/compliance.py` |
-| Promise-to-pay tracker | Record promises, kept/broken outcomes by bucket and month | `core/ptp.py`, `sql/ptp_*.sql` |
+<img src="docs/img/billpay-dashboard.png" alt="BillPay dashboard" width="90%">
 
-## Architecture
+</div>
+
+---
+
+## 🧭 The problem in one minute
+
+**Paying suppliers.** A finance analyst uploads a file with 120 supplier payments. One CLABE
+has a typo, two rows are duplicates, a receiving bank times out at 10:02, and the statement
+prints references differently from what was sent. None of that is hard. All of it is manual,
+and the worst outcome isn't a failed payment, it's **paying the same supplier twice**.
+
+**Collecting from customers.** A lender has 400 SME credit lines. Some customers are a few
+days late and will pay with a friendly WhatsApp; others are sliding toward 90+ days. Agents
+work from a spreadsheet, every account gets the same message, and sooner or later someone
+sends a text at 11 pm that hints at "legal consequences". That's a **CONDUSEF complaint
+waiting to happen**.
+
+This lab turns both workflows into something you can click through, measure, and argue about.
+
+---
+
+## 🔬 What the lab does
+
+### Module 1 · SPEI BillPay Ops
 
 ```mermaid
 flowchart LR
-    subgraph UI["Streamlit (Home.py + pages/)"]
+    A[📄 Payment CSV] --> B{Pre-flight}
+    B -- blocked --> X[❌ Fix before sending<br/>bad CLABE · duplicate · bad amount]
+    B -- ready --> C[🏦 SPEI simulator]
+    C -- settled --> R[🔁 Reconciliation]
+    C -- returned, retryable --> D[⏳ Backoff & retry]
+    D --> C
+    C -- returned, account problem --> H[🙋 Needs-human queue<br/>with next action]
+    C -- pending --> W[⏸ Wait for final status<br/>never re-send]
+    W --> C
+    R --> M[📊 Dashboard]
+    H --> M
+```
+
+| Step | What you see | Why it matters |
+|---|---|---|
+| **CLABE validator** | 18 digits split into bank / plaza / account / check digit, verified with Banxico's 3-7-1 weights | The cheapest failure to prevent is the one caught before sending |
+| **Pre-flight report** | Every row marked *ready*, *warning* or *blocked*, with the reason | The analyst fixes 9 rows instead of chasing 9 returns |
+| **SPEI simulator** | Settled / returned (devolución) / pending, realistic latency, tunable odds | Lets you stress-test ops flows without a bank |
+| **Retry policy** | Infra failures retried with backoff; account failures routed to a human with a suggested fix | Fewer manual re-sends, **zero double payments by design** |
+| **Reconciliation** | Exact match → fuzzy match → unmatched *both ways* (sent-not-posted and posted-not-sent) | Month-end close becomes an exception list, not a spreadsheet hunt |
+| **Dashboard** | Success rate, median/p90 settlement, returns by reason, recon error rate, time to resolve | Ops gets the same numbers the CFO asks for |
+
+### Module 2 · Collections Workbench
+
+```mermaid
+flowchart LR
+    P[🏢 SME portfolio<br/>12 months of history] --> S[🧮 Early-warning score<br/>explainable points]
+    S --> T[🗺 Treatment rules<br/>reminder → nudge → call → plan → agency]
+    T --> N[✍️ Spanish draft<br/>template or Claude]
+    N --> G{🛡 Compliance check}
+    G -- all 6 rules pass --> OK[✅ Send]
+    G -- any rule fails --> BL[🚫 Blocked & logged]
+    OK --> PTP[🤝 Promise-to-pay tracker]
+    PTP --> A[📈 Roll rates · cures · recovery · vintages]
+    P --> A
+```
+
+| Step | What you see | Why it matters |
+|---|---|---|
+| **Delinquency analytics** | DPD buckets, roll-rate matrix, cure and recovery rates, days to resolution, vintage curves, all in plain SQL shown next to each chart | The metrics a collections strategy is judged by, readable by any analyst |
+| **Early-warning score** | 0-100 points from 5 behaviours (utilization spike, partial/missed payments, broken promises, DPD), with a bar chart of *why* | Agents trust what they can explain; auditors too |
+| **Treatment engine** | First-match rules by bucket, segment and risk, editable in YAML | Strategy changes are a config diff, not a deploy |
+| **Nudge drafter** | A Spanish WhatsApp/email/call script per account and stage | Faster, more personal outreach |
+| **Compliance guardrails** | ✅/❌ per rule: contact window in the debtor's timezone, no threats or abuse, sender named, exact amount, payment option, frequency caps | **No message leaves without passing**, whoever or whatever wrote it |
+| **Promise-to-pay tracker** | Record promises, see kept vs. broken by bucket and month | Tells you which promises are worth believing |
+
+<div align="center">
+<img src="docs/img/compliance-check.png" alt="Compliance guardrails catching a threat" width="85%">
+<br><sub>Type a threat into any draft and watch it get blocked: <code>no_threats_or_abuse · threat: 'carcel'</code></sub>
+</div>
+
+---
+
+## 🎯 Who it helps and how
+
+| Persona | Pain today | What the lab gives them |
+|---|---|---|
+| 🧾 **Finance ops analyst** | Chasing returns and re-sending by hand | Pre-flight before sending, auto-retry for infra failures, a short queue with the next step written out |
+| 🏦 **Treasury / AP lead** | Fear of double payments, slow month-end close | A retry policy that never re-sends pending transfers, reconciliation that surfaces only real exceptions |
+| 📞 **Collections agent** | Same script for everyone, unsure what's allowed | A prioritized worklist, the reason each account is risky, a compliant draft ready to send |
+| 📋 **Collections manager** | Strategy lives in someone's head | Roll rates and cures to steer by, treatment rules in one YAML file |
+| 📊 **CFO** | Can't see where cash gets stuck | Success, settlement time, recovery and vintage curves, with the SQL behind every number |
+| ⚖️ **Compliance** | Hopes agents behave | Deterministic rules, a block log, and an LLM that can't bypass either |
+
+### What the seeded demo shows
+
+> These numbers come from synthetic data with fixed seeds. They show that the mechanics work,
+> not how any real bank or portfolio performs.
+
+| BillPay run (120-row file) | | Collections portfolio (400 SMEs) | |
+|---|---|---|---|
+| Rows blocked at pre-flight | **9** | Accounts with DPD > 0 | **23%** |
+| Payments settled | **94.6%** | 1-30 DPD that cure next month | **80%** |
+| Median / p90 settlement | **3.7 s / 8.8 s** | Recovery on 90+ exposure | **33%** |
+| Reconciliation error rate | **5.2%** | Next-month roll rate, low → high risk band | **15% → 36% → 83%** |
+| Median time to resolve a return | **4.1 h** (simulated) | Promises to pay kept | **79%** |
+
+---
+
+## 🏗 Why it's built this way
+
+Every choice below is a product decision first and a technical one second. The long form is
+in the [ADRs](docs/decisions/).
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**🧱 Rules decide, the LLM only writes**<br>
+Whether and when to contact someone is a deterministic rule. Claude helps with *wording*, and
+its output goes through the same six checks as a template. With no API key the app still
+does everything. → [ADR 0003](docs/decisions/0003-rules-plus-llm.md)
+
+</td>
+<td width="50%" valign="top">
+
+**🔁 Never re-send a pending transfer**<br>
+Retry only what's retryable (receiving bank down, timeout) and wait on anything still in
+flight. The tests assert that no retry starts before the previous attempt resolved.
+→ [ADR 0002](docs/decisions/0002-retry-policy.md)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**🧮 Explainable over clever**<br>
+The risk score is a points table, not a model. Every point traces to one behaviour, and a
+T-1 → T backtest checks that higher bands really roll more.
+
+</td>
+<td valign="top">
+
+**🦆 SQL as the contract (DuckDB)**<br>
+Roll rates, cures and KPIs are plain `.sql` files that run in-process, in tests, in the app
+and in the DuckDB CLI. No servers, and an analyst can review every number.
+→ [ADR 0001](docs/decisions/0001-duckdb-for-storage-and-analytics.md)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**⚙️ Business rules in YAML**<br>
+Return reasons, retry limits, score weights, treatment stages, compliance patterns and
+message templates all live in [`config/`](config/). Ops can tune them without touching code.
+
+</td>
+<td valign="top">
+
+**🧪 Honest by construction**<br>
+100% synthetic, seeded data ([ADR 0004](docs/decisions/0004-synthetic-data-and-illustrative-codes.md)).
+SPEI return reasons are labelled illustrative. Every number in this README comes from the
+seeded demo and can be reproduced with the default seeds.
+
+</td>
+</tr>
+</table>
+
+### Architecture
+
+```mermaid
+flowchart LR
+    subgraph UI["🖥 Streamlit · Home.py + pages/"]
+        direction TB
         P1[CLABE validator]
         P2[Bulk payment run]
         P3[BillPay dashboard]
@@ -49,65 +198,76 @@ flowchart LR
         P5[Collections workbench]
     end
 
-    subgraph Core["core/ (pure Python, tested)"]
-        CL[clabe] --> PF[payments pre-flight]
-        PF --> SIM[spei_sim] --> RT[retry policy]
+    subgraph Core["🧠 core/ · pure Python, 99% tested"]
+        direction TB
+        CL[clabe] --> PF[payments] --> SIM[spei_sim] --> RT[retry]
         SIM --> RC[recon]
-        PG[portfolio generator] --> EW[early_warning] --> TR[treatment]
-        TR --> NU[nudges] --> CP[compliance]
+        PG[portfolio] --> EW[early_warning] --> TR[treatment] --> NU[nudges] --> CP[compliance]
         PG --> PTP[ptp]
     end
 
-    subgraph Data["DuckDB in-process"]
-        SQL[(sql/*.sql)]
-    end
+    CFG[[⚙️ config/*.yaml]] -.-> Core
+    SQL[(🦆 DuckDB · sql/*.sql)]
+    LLM{{🤖 Claude API · optional}} -.-> NU
 
-    CFG[[config/*.yaml]] -.-> SIM & RT & EW & TR & CP & NU
-    LLM{{Claude API - optional}} -.-> NU
-
-    P1 --> CL
-    P2 --> PF & SIM
-    P3 --> RC & SQL
-    P4 --> PG & SQL
-    P5 --> EW & TR & NU & PTP
-    SIM & RC & PG & PTP --> SQL
+    UI --> Core
+    Core --> SQL
 ```
 
-Business rules live in YAML (`config/`), analytics in SQL (`sql/`), logic in `core/`, and the
-UI in `Home.py` + `pages/`. Nothing in `core/` imports Streamlit.
+`core/` never imports Streamlit, so the domain logic is tested on its own. The UI is a
+thin layer over it.
 
-## Run locally
+---
 
-Requires Python 3.11+.
+## 🚀 Run it in two commands
 
 ```bash
+git clone https://github.com/manuel-lomelin/mx-payments-ops-lab.git && cd mx-payments-ops-lab
 make setup && make run
 ```
 
-Other targets: `make test`, `make cov` (coverage on `/core`, gate at 80%), `make lint`,
-`make seed` (rewrites `data/sample_payments.csv` and builds `data/lab.duckdb` for ad-hoc SQL,
-e.g. `duckdb data/lab.duckdb < sql/roll_rates.sql`).
+Then open http://localhost:8501. Requires Python 3.11+.
 
-Optional LLM drafting: copy `.env.example` to `.env` (or export the variables) and set
-`ANTHROPIC_API_KEY`. Without it the app is fully functional and uses deterministic Spanish
-templates. With it, drafts use `claude-opus-5-5` by default (override with
-`ANTHROPIC_MODEL`), with the API's server-side refusal fallback enabled, and still go
-through the same compliance checker.
+**Suggested 3-minute tour**
+1. **Bulk Payment Run**: review the pre-flight report, then hit *Send*. Push *P(returned)* up and send again.
+2. **BillPay Dashboard**: drag the bank-statement noise sliders and watch reconciliation react.
+3. **Collections Analytics**: read the roll-rate matrix, then open any *SQL* expander.
+4. **Collections Workbench**: pick an account, see why it's risky, then add *"irá a la cárcel"* to the draft. It gets blocked.
 
-## What the demo shows (seeded defaults)
+<details>
+<summary><b>More commands and the optional LLM</b></summary>
 
-- **Pre-flight:** 120-row sample file → 111 ready, 9 blocked (4 short CLABEs, 3 duplicates,
-  1 wrong check digit, 1 non-positive amount).
-- **SPEI run:** 94.6% settled (93.7% on first attempt), median settlement 3.7 s, p90 8.8 s;
-  returned payments resolved in a median of 4.1 h (human time is simulated).
-- **Reconciliation:** 92 exact + 8 fuzzy matches, 7 reversal pairs, 5.2% recon error rate.
-- **Portfolio (as of 2026-09-30):** 400 accounts, 23% with DPD > 0, 11% at 30+ DPD;
-  1-30 → current roll 80%, 1-30 → 31-60 roll 15%; recovery on 90+ exposure 33%.
-- **Early-warning backtest:** next-month roll rate 15% / 36% / 83% for low / medium / high
-  bands. This validates the mechanics on synthetic data, not real-world lift.
-- **Promises to pay:** 79% kept among resolved promises.
+| Command | Does |
+|---|---|
+| `make test` | Run the test suite |
+| `make cov` | Tests with coverage on `/core` (CI gate: 80%) |
+| `make lint` | Ruff lint + format check |
+| `make seed` | Rewrite `data/sample_payments.csv` and build `data/lab.duckdb` for ad-hoc SQL |
 
-## Metrics glossary
+Try the SQL directly: `duckdb data/lab.duckdb < sql/roll_rates.sql`
+
+**Optional Claude drafting:** copy `.env.example` to `.env` (or export the variables) and set
+`ANTHROPIC_API_KEY`. Drafts then use `claude-opus-5-5` (override with `ANTHROPIC_MODEL`) with
+the API's server-side refusal fallback enabled. Without a key, deterministic Spanish
+templates are used, and LLM drafts go through the same compliance checks.
+
+</details>
+
+---
+
+## 🧠 Product thinking, not just code
+
+| Doc | What's in it |
+|---|---|
+| [One-pager · BillPay](docs/one-pager-billpay.md) | Problem, users, hypotheses, north-star and guardrail metrics, 30/60/90 days, SAT/CNBV/PLD risks, what I didn't build |
+| [One-pager · Collections](docs/one-pager-collections.md) | Same structure for the collections workbench |
+| [Experiment design](docs/experiments.md) | A/B test for the nudge: unit, primary metric, MDE with the sample-size math, stop rules |
+| [Compliance notes](docs/compliance-notes.md) | The reasoning behind each guardrail and what pattern checks can't catch |
+| [Decisions (ADRs)](docs/decisions/) | DuckDB · retry policy · rules + LLM · synthetic data |
+| [Roadmap](docs/roadmap.md) | The backlog, also tracked as GitHub Issues |
+
+<details>
+<summary><b>📖 Metrics glossary</b></summary>
 
 | Metric | Definition |
 |---|---|
@@ -126,39 +286,50 @@ through the same compliance checker.
 | PTP kept rate | Promises where next payment ≥ 95% of the promised amount ÷ resolved promises |
 | Risk score | Sum of feature points (0-100) from `config/early_warning.yaml` |
 
-## Product docs
+</details>
 
-- [One-pager: SPEI BillPay Ops](docs/one-pager-billpay.md)
-- [One-pager: Collections Workbench](docs/one-pager-collections.md)
-- [Experiment design: collections nudge A/B test](docs/experiments.md)
-- [Compliance notes](docs/compliance-notes.md)
-- Decisions: [DuckDB](docs/decisions/0001-duckdb-for-storage-and-analytics.md) ·
-  [Retry policy](docs/decisions/0002-retry-policy.md) ·
-  [Rules + LLM](docs/decisions/0003-rules-plus-llm.md) ·
-  [Synthetic data](docs/decisions/0004-synthetic-data-and-illustrative-codes.md)
-- [Roadmap](docs/roadmap.md)
+<details>
+<summary><b>🗂 What's where</b></summary>
 
-## Built with AI coding tools
+```
+Home.py, pages/        Streamlit UI (5 pages)
+core/                  Domain logic: clabe, payments, spei_sim, retry, recon, portfolio,
+                       early_warning, treatment, nudges, compliance, ptp
+sql/                   Every metric as a plain DuckDB query
+config/                Business rules in YAML
+data/                  Public bank catalog + seeded sample payment file
+docs/                  One-pagers, ADRs, experiment design, compliance notes, roadmap
+tests/                 Unit tests for core/ + smoke tests for every page
+```
 
-I built this with an AI coding assistant (Claude Code) as a pair. The workflow: I set the
-product scope, constraints and acceptance criteria; the assistant prototyped each module
-on a feature branch; I reviewed the diffs, questioned the edge cases and the domain choices
-(which return reasons are retryable, what counts as a cure, what the guardrails must
-block), and asked for changes. Tests and CI are the contract: nothing merges without ruff
-and pytest passing and the coverage gate on `/core`. AI-generated code got the same review
-as any teammate's.
+</details>
 
-## Limitations / synthetic data
+---
 
-- All data is synthetic and seeded. Company and person names are obviously fake; the only
-  real names are public bank names in `data/banks.csv` (a subset; verify against Banxico).
-- SPEI return reasons are **illustrative labels**, not Banxico's official catalog or codes.
-- Settlement latency, human resolution time and the bank statement are simulated.
-- The portfolio has no interest or fees, and balances freeze at 90+ DPD.
-- Compliance rules are a high-level reading of CONDUSEF's collection rules, implemented as
-  patterns. Not legal advice; verify before use. See `docs/compliance-notes.md`.
+## 🤖 Built with AI coding tools
+
+I built this with Claude Code as a pair programmer. I set the product scope, constraints and
+acceptance criteria. The assistant prototyped each module on its own feature branch, and I
+reviewed every diff. I challenged the domain calls (which returns are retryable, what counts
+as a cure, what the guardrails must block) and asked for changes. Tests and CI are the
+contract: nothing merges without ruff, pytest and the coverage gate passing. Two real bugs
+were caught that way and are documented in the PR history.
+
+## ⚠️ Limitations and synthetic data
+
+- **All data is synthetic** and seeded. Names are obviously fake ("PyME Demo 0042",
+  "Demo Finanzas"); the only real names are public bank names in `data/banks.csv`, a subset
+  to verify against Banxico.
+- **SPEI return reasons are illustrative labels**, not Banxico's official catalog or codes.
+- Settlement latency, human resolution time and the bank statement are simulated. The
+  portfolio has no interest or fees, and balances freeze at 90+ DPD.
+- **Compliance rules are a high-level reading of CONDUSEF's collection rules**, implemented
+  as patterns. This is not legal advice; verify before any real use.
 - No real SPEI, WhatsApp, email or dialer integrations. State lives in the browser session.
+- **Live demo:** not deployed yet (tracked in the roadmap).
 
-## License
+<div align="center">
 
-MIT, see [LICENSE](LICENSE).
+**MIT licensed** · Built by [manuel-lomelin](https://github.com/manuel-lomelin) · Product Lead, Mexican fintech
+
+</div>
