@@ -35,7 +35,7 @@ def issues_of(rows):
 def test_clean_row_is_ready():
     report = issues_of([{}])
     assert report.loc[0, "status"] == "ready"
-    assert report.loc[0, "bank_name"] == "BBVA MEXICO"
+    assert report.loc[0, "bank_name"] == "BBVA MÉXICO"
     assert report.loc[0, "payment_id"] == "P00001"
 
 

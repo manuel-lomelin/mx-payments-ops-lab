@@ -6,7 +6,34 @@ import random
 
 import pandas as pd
 
-from core.clabe import build_clabe, load_banks
+from core.clabe import build_clabe
+
+# Banks the synthetic suppliers bank with. Pinned (not the whole catalog) so the seeded
+# sample file stays stable when the catalog changes.
+SAMPLE_BANK_CODES = [
+    "002",
+    "006",
+    "009",
+    "012",
+    "014",
+    "019",
+    "021",
+    "030",
+    "036",
+    "042",
+    "044",
+    "058",
+    "059",
+    "060",
+    "062",
+    "072",
+    "106",
+    "127",
+    "130",
+    "137",
+    "166",
+    "646",
+]
 
 CONCEPTS = [
     "Pago factura",
@@ -23,7 +50,7 @@ CONCEPTS = [
 def generate_payment_batch(n: int = 120, seed: int = 42, error_rate: float = 0.08) -> pd.DataFrame:
     """Generate a supplier payment file. About `error_rate` of rows get a deliberate defect."""
     rng = random.Random(seed)
-    banks = list(load_banks())
+    banks = SAMPLE_BANK_CODES
     rows = []
     for _ in range(n):
         plaza, account = f"{rng.randint(1, 999):03d}", f"{rng.randint(0, 10**11 - 1):011d}"
