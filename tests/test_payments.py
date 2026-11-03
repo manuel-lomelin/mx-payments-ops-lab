@@ -18,8 +18,13 @@ OTHER = build_clabe("072", "180", "00087654321")
 
 
 def frame(rows):
-    base = {"beneficiary": "Proveedor Demo 001", "clabe": GOOD, "amount_mxn": "100.00",
-            "reference": "1234567", "concept": "Pago factura 1"}  # fmt: skip
+    base = {
+        "beneficiary": "Proveedor Demo 001",
+        "clabe": GOOD,
+        "amount_mxn": "100.00",
+        "reference": "1234567",
+        "concept": "Pago factura 1",
+    }
     return pd.DataFrame([{**base, **r} for r in rows])
 
 
@@ -89,8 +94,13 @@ def test_amount_accepts_thousand_separators_and_symbol():
 def test_summary_and_instructions():
     report = issues_of([{}, {"amount_mxn": "0"}, {"clabe": OTHER, "concept": ""}])
     summary = preflight_summary(report)
-    assert summary == {"rows": 3, "ready": 1, "warning": 1, "blocked": 1,
-                       "sendable_amount_mxn": 200.0}  # fmt: skip
+    assert summary == {
+        "rows": 3,
+        "ready": 1,
+        "warning": 1,
+        "blocked": 1,
+        "sendable_amount_mxn": 200.0,
+    }
     instructions = to_instructions(report)
     assert [i.payment_id for i in instructions] == ["P00001", "P00003"]
     assert str(instructions[0].amount_mxn) == "100.00"
