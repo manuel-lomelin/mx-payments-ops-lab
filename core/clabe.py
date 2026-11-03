@@ -4,8 +4,10 @@ Layout of the 18 digits: 3 bank + 3 plaza + 11 account + 1 check digit.
 Check digit: weights 3, 7, 1 repeated over the first 17 digits; sum (digit * weight) mod 10
 for each position, then check = (10 - (sum mod 10)) mod 10.
 
-The bank catalog in data/banks.csv is a small, public subset. Verify codes against
-Banxico's official participant catalog before relying on it.
+The bank catalog in data/banks.csv is the "clave del banco" table from the Spanish
+Wikipedia article on CLABE (https://es.wikipedia.org/wiki/CLABE), short names as listed
+there, excluding the "999 N/A" placeholder. Wikipedia lags real changes in SPEI
+participants, so verify against Banxico's participant catalog before production use.
 """
 
 from __future__ import annotations
