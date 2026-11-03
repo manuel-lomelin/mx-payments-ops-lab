@@ -1,0 +1,27 @@
+# Explainable early-warning score. Each feature earns up to `weight` points, linearly,
+# reaching full weight at `cap`. Score = sum of points (0-100). No black box.
+features:
+  utilization_spike:
+    weight: 25
+    cap: 0.25
+    label: Utilization spike vs. prior 3-month average
+  partial_payments_3m:
+    weight: 20
+    cap: 2
+    label: Partial payments in the last 3 statements
+  missed_payments_3m:
+    weight: 20
+    cap: 2
+    label: Missed payments in the last 3 statements
+  broken_ptp_6m:
+    weight: 20
+    cap: 2
+    label: Broken promises-to-pay in the last 6 months
+  current_dpd:
+    weight: 15
+    cap: 60
+    label: Current days past due
+bands:
+  low: 0
+  medium: 25
+  high: 50

@@ -1,0 +1,43 @@
+# Treatment strategy. Rules are evaluated top to bottom; first match wins.
+# Conditions (all optional): buckets, segments, min_score, max_score, min_broken_ptp.
+stages:
+  no_action:      { channel: none,     max_contacts_per_week: 0, order: 0 }
+  reminder:       { channel: whatsapp, max_contacts_per_week: 1, order: 1 }
+  nudge:          { channel: whatsapp, max_contacts_per_week: 2, order: 2 }
+  call:           { channel: phone,    max_contacts_per_week: 3, order: 3 }
+  payment_plan:   { channel: email,    max_contacts_per_week: 2, order: 4 }
+  agency_handoff: { channel: email,    max_contacts_per_week: 1, order: 5 }
+
+rules:
+  - name: high-risk current account gets a friendly pre-due reminder
+    buckets: [current]
+    min_score: 50
+    stage: reminder
+  - name: current accounts are left alone
+    buckets: [current]
+    stage: no_action
+  - name: early delinquency with high risk goes straight to a call
+    buckets: ["1-30"]
+    min_score: 50
+    stage: call
+  - name: early delinquency gets a digital nudge
+    buckets: ["1-30"]
+    stage: nudge
+  - name: broken promises in 31-60 move to a structured plan
+    buckets: ["31-60"]
+    min_broken_ptp: 1
+    stage: payment_plan
+  - name: 31-60 gets an agent call
+    buckets: ["31-60"]
+    stage: call
+  - name: 61-90 gets a payment plan offer
+    buckets: ["61-90"]
+    stage: payment_plan
+  - name: large 90+ accounts get one last in-house negotiation
+    buckets: ["90+"]
+    segments: [medium]
+    max_score: 85
+    stage: payment_plan
+  - name: everything else at 90+ is handed to an external agency
+    buckets: ["90+"]
+    stage: agency_handoff
