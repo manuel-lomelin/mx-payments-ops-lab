@@ -13,3 +13,4 @@ build/
 *.duckdb.wal
 .DS_Store
 .streamlit/secrets.toml
+.claude/

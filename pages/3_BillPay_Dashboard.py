@@ -64,18 +64,17 @@ with left:
             orientation="h",
             labels={"reason_label": "", "returns": "Returned attempts"},
         )
-        fig.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0))
+        fig.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0), xaxis_dtick=1)
         st.plotly_chart(fig, width="stretch")
     st.caption("Reason labels are illustrative, not Banxico's official catalog.")
 with right:
-    st.subheader("Settlement time (settled payments)")
+    st.subheader("Share settled within X seconds")
     settled = run.payments.dropna(subset=["settlement_s"])
-    fig = px.histogram(
+    fig = px.ecdf(
         settled,
         x="settlement_s",
-        nbins=40,
-        log_y=True,
-        labels={"settlement_s": "Seconds from first send to settlement"},
+        log_x=True,
+        labels={"settlement_s": "Seconds from first send to settlement (log scale)"},
     )
     fig.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0))
     st.plotly_chart(fig, width="stretch")
