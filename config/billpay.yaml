@@ -1,0 +1,6 @@
+# Pre-flight limits for bulk SPEI payment files.
+# Field limits are ILLUSTRATIVE. Confirm them with your SPEI participant / bank integration spec.
+reference_max_len: 7        # SPEI numeric reference ("referencia numerica"), digits only
+concept_max_len: 40         # payment concept ("concepto de pago")
+beneficiary_max_len: 40
+max_amount_mxn: 5000000     # internal per-transfer approval limit for this demo
