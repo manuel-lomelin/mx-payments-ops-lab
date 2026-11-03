@@ -4,6 +4,7 @@ import streamlit as st
 from core.collections_analytics import roll_rate_matrix, run_analytics
 from core.db import load_sql
 from core.portfolio import BUCKETS, generate_portfolio
+from core.ptp import summarize
 
 st.set_page_config(page_title="Collections analytics", page_icon="📉", layout="wide")
 st.title("Collections analytics")
@@ -109,3 +110,19 @@ fig.update_layout(height=360, margin=dict(l=0, r=0, t=10, b=0), yaxis_tickformat
 st.plotly_chart(fig, width="stretch")
 st.caption("Cohorts are left-truncated: only months on book inside the 12-month window exist.")
 show_sql("vintage_curves")
+
+st.subheader("Promise-to-pay outcomes")
+ptp = summarize(portfolio.promises)
+left, right = st.columns(2)
+with left:
+    st.dataframe(
+        ptp["by_bucket"].fillna({"bucket_at_promise": "all"}),
+        hide_index=True,
+        width="stretch",
+        column_config={"kept_rate": st.column_config.NumberColumn(format="percent")},
+    )
+with right:
+    fig = px.line(ptp["by_month"], x="promise_month", y="kept_rate", markers=True)
+    fig.update_layout(height=280, margin=dict(l=0, r=0, t=10, b=0), yaxis_tickformat=".0%")
+    st.plotly_chart(fig, width="stretch")
+show_sql("ptp_outcomes", "ptp_by_month")

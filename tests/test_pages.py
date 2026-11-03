@@ -21,3 +21,12 @@ def test_bulk_run_send_button():
     at.button[0].click().run()
     assert not at.exception
     assert "billpay_run" in at.session_state
+
+
+def test_workbench_blocks_a_threatening_edit():
+    at = AppTest.from_file(str(ROOT / "pages" / "5_Collections_Workbench.py"), default_timeout=60)
+    at.run()
+    at.text_area[0].set_value(at.text_area[0].value + " Si no paga, irá a la cárcel.").run()
+    at.button[0].click().run()
+    assert not at.exception
+    assert len(at.session_state["contact_log"].blocked) == 1

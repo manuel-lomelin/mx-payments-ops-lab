@@ -1,0 +1,36 @@
+# Guardrails applied to EVERY collection draft (LLM or template) before it can be sent.
+# Based on a high-level reading of CONDUSEF's rules for collection agencies; see
+# docs/compliance-notes.md. VERIFY against the current official text before real use.
+
+sender_name: Demo Finanzas            # synthetic lender name; must appear in every message
+contact_window:                       # debtor local time
+  start: "07:00"
+  end: "22:00"
+frequency_caps:                       # internal policy (illustrative), across all channels
+  per_day: 1
+  per_week: 3
+payment_option_patterns:              # at least one must appear
+  - '\b\d{18}\b'                      # a CLABE
+  - '(?i)\breferencia\b'
+  - 'https?://\S+'
+# Accent-insensitive, case-insensitive regexes. Matching any one blocks the draft.
+forbidden_patterns:
+  threat:
+    - '\bcarcel\b'
+    - '\bprision\b'
+    - '\bpenal(es|mente)?\b'
+    - '\bpolicia\b'
+    - '\bamenaz'
+    - '\bembarg(o|ar|aremos|amos)\b.*\b(hoy|manana|inmediat)'
+    - '\b(atengase|atenerse) a las consecuencias\b'
+    - '\bvamos a (ir|buscarlo|buscarla) a\b'
+    - '\bultima advertencia\b'
+  abusive:
+    - '\b(ratero|ladron|estafador|sinverguenza|irresponsable|inutil|tramposo|moroso)\b'
+    - '\bdeberia darle verguenza\b'
+  third_party_pressure:
+    - '\b(su|sus) (familia|vecinos|companeros|jefe|clientes)\b'
+    - '\b(boletinar|exhibir|publicar) (su|sus|la) (deuda|nombre)\b'
+  false_authority:
+    - '\b(juzgado|juez|ministerio publico|fiscalia)\b'
+    - '\borden de (aprehension|arresto)\b'

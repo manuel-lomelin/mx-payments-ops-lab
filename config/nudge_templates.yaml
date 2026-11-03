@@ -1,0 +1,34 @@
+# Deterministic Spanish templates (the fallback when no LLM is configured).
+# Placeholders: {first_name} {company} {sender} {amount} {clabe} {reference} {pay_by}
+reminder:
+  whatsapp: >-
+    Hola {first_name}, te escribe {sender}. Te recordamos que el pago de {company} por
+    {amount} vence el {pay_by}. Puedes pagar por SPEI a la CLABE {clabe} con referencia
+    {reference}. Si ya pagaste, ignora este mensaje. Gracias.
+nudge:
+  whatsapp: >-
+    Hola {first_name}, te escribe {sender}. Vemos un saldo vencido de {amount} en la línea
+    de {company}. Puedes ponerte al corriente por SPEI a la CLABE {clabe}, referencia
+    {reference}. Si necesitas ayuda o ya realizaste el pago, responde a este mensaje.
+call:
+  phone: >-
+    Guion de llamada. Buenos días, ¿hablo con {first_name}? Le llamo de {sender} sobre la
+    línea de crédito de {company}. Hay un saldo vencido de {amount}. ¿Podemos acordar una
+    fecha de pago? Puede pagar por SPEI a la CLABE {clabe} con referencia {reference}.
+  whatsapp: >-
+    Hola {first_name}, te escribe {sender}. Intentamos comunicarnos contigo sobre el saldo
+    vencido de {amount} de {company}. Puedes pagar por SPEI a la CLABE {clabe}, referencia
+    {reference}, o respondernos para acordar una fecha.
+payment_plan:
+  email: >-
+    Estimado(a) {first_name}: en {sender} queremos ayudar a {company} a regularizar su
+    saldo vencido de {amount}. Podemos ofrecerle un plan de pagos en parcialidades.
+    Responda a este correo para revisarlo. Si prefiere liquidar, puede pagar por SPEI a la
+    CLABE {clabe} con referencia {reference}. Atentamente, {sender}.
+agency_handoff:
+  email: >-
+    Estimado(a) {first_name}: le informamos que en {sender} no hemos recibido el pago del
+    saldo vencido de {amount} de {company}. Si no se regulariza antes del {pay_by}, la
+    gestión de su cuenta será asignada a un despacho de cobranza externo registrado. Aún
+    puede pagar por SPEI a la CLABE {clabe} con referencia {reference}, o contactarnos para
+    un plan de pagos. Atentamente, {sender}.
