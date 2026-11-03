@@ -1,0 +1,12 @@
+# Retry and fallback policy for simulated SPEI transfers.
+max_attempts: 3                 # including the first send
+backoff:
+  base_seconds: 60
+  multiplier: 2.0
+  max_seconds: 900
+  jitter_fraction: 0.1
+# Pending transfers are never re-sent: the only safe path is to wait for a final status.
+# Re-sending a pending transfer risks paying the supplier twice.
+never_resend_pending: true
+# Simulated time for an ops analyst to resolve a needs-human item (lognormal).
+human_resolution_hours: { median: 6, sigma: 0.8 }
