@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -28,6 +28,7 @@ class SimConfig:
     pending_return_reason: str
     reasons: list[dict]
     human_hours: dict[str, float]
+    prevented_by_verification: list[str] = field(default_factory=list)
 
     @classmethod
     def from_config(cls, **overrides) -> SimConfig:
@@ -43,6 +44,7 @@ class SimConfig:
             pending_return_reason=cfg["pending_resolution"]["returned_reason"],
             reasons=cfg["return_reasons"],
             human_hours=retry["human_resolution_hours"],
+            prevented_by_verification=cfg.get("prevented_by_account_verification", []),
         )
         for key, value in overrides.items():
             setattr(sim, key, value)
@@ -56,6 +58,17 @@ class SimConfig:
         self.p_settled /= total
         self.p_returned /= total
         self.p_pending /= total
+
+    def without_reasons(self, reason_ids) -> SimConfig:
+        """Copy where the given return reasons cannot happen; their odds move to settled."""
+        drop = set(reason_ids)
+        keep = [r for r in self.reasons if r["id"] not in drop]
+        total = sum(r["weight"] for r in self.reasons)
+        share = sum(r["weight"] for r in keep) / total if total else 0.0
+        moved = self.p_returned * (1 - share)
+        return replace(
+            self, reasons=keep, p_returned=self.p_returned - moved, p_settled=self.p_settled + moved
+        )
 
     def reason_label(self, reason_id: str | None) -> str | None:
         return next((r["label"] for r in self.reasons if r["id"] == reason_id), reason_id)
@@ -113,6 +126,8 @@ def run_batch(
     cfg = cfg or SimConfig.from_config()
     policy = policy or RetryPolicy.from_config()
     rng = random.Random(seed)
+    # Accounts verified by filter 2 cannot come back with the reasons it prevents.
+    verified_cfg = cfg.without_reasons(cfg.prevented_by_verification)
     attempts: list[dict] = []
     payments: list[dict] = []
 
@@ -123,7 +138,7 @@ def run_batch(
         reasons_seen: list[str] = []
         while True:
             attempt += 1
-            res = simulate_attempt(rng, cfg)
+            res = simulate_attempt(rng, verified_cfg if ins.account_verified else cfg)
             resolved_at = sent_at + timedelta(seconds=res.latency_s)
             attempts.append(
                 {
@@ -161,6 +176,7 @@ def run_batch(
                 "amount_mxn": float(ins.amount_mxn),
                 "reference": ins.reference,
                 "concept": ins.concept,
+                "account_verified": ins.account_verified,
                 "final_status": "settled" if settled else "needs_human",
                 "attempts": attempt,
                 "had_return": bool(reasons_seen),

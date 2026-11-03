@@ -21,6 +21,13 @@ pending_resolution:
   settled: 0.80
   returned_reason: TIMEOUT                # returned with this reason in the other 20%
 
+# Return reasons an account ownership check (filter 2) prevents: a payment to a verified
+# account can no longer come back with these.
+prevented_by_account_verification:
+  - NONEXISTENT_ACCOUNT
+  - NAME_MISMATCH
+  - ACCOUNT_TYPE_MISMATCH
+
 return_reasons:
   - id: NONEXISTENT_ACCOUNT
     label: Cuenta inexistente
